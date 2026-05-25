@@ -1,0 +1,7 @@
+# Large binary files
+*.stl
+*.usd
+*.etli
+
+# Isaac Sim logs
+.isaacsim_logs/
