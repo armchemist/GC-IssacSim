@@ -11,16 +11,13 @@ conda activate isaac_sim
 # Pick a GPU (RTX 3080 #0 has some memory used; #1 is free)
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1}
 
-# Use the prebuilt streaming app config
-APP=isaacsim.exp.full.streaming.kit
-
 # Keep NvStreamer .etli trace logs out of the project root
-LOG_DIR="$(dirname "$0")/.isaacsim_logs"
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_DIR="$PROJECT_DIR/.isaacsim_logs"
 mkdir -p "$LOG_DIR"
 cd "$LOG_DIR"
 
-exec isaacsim "$APP" \
-    --no-window \
+exec python "$PROJECT_DIR/launch_isaacsim.py" \
     --/app/livestream/publicEndpointAddress=166.104.223.32 \
     --/app/livestream/port=49100 \
     "$@"
