@@ -15,21 +15,22 @@ Total bbox: ~75 × 20 × ~42 mm (X × Y × Z, watertight).
 
 | Zone | X range (mm) | Y width | Z height | Notes |
 |---|---|---|---|---|
-| Pivot shaft | -10 to 0 | ~4 | ~0 (axle) | rotation axis |
-| Housing block | 0 to ~22 | ~40 | ~18 | motor/gear body — DO NOT cover |
-| Grip blade (taper) | 22 to 65 | 35 → 14 | 8 → 5 | usable for attachments |
-| Tip | 65 | 14 | <1 | flat edge |
+| Pivot shaft | -10 to 0 | ~0 (axle) | ~4 | rotation axis (Z) |
+| Housing block | 0 to ~22 | ~20 | ~42 | motor/gear body — DO NOT cover |
+| Grip blade (taper) | 22 to 65 | 11 → 7 | 39 → 16 | usable for attachments |
+| Tip | 65 | <4 | ~15 | flat edge |
 
 ### Blade cross-sections (link6, symmetrized half-extents)
+Measured via `trimesh.section()` (proper planar cross-section).
 | Finger-local X | half_Y | half_Z |
 |---|---|---|
-| 22 (blade base) | 18.5 | 5.0 |
-| 28              | 16.5 | 3.8 |
-| 36              | 14.0 | 3.2 |
-| 46              | 11.0 | 3.5 |
-| 55              | 8.0  | 3.2 |
-| 62              | 7.5  | 1.6 |
-| 65 (tip)        | 7.0  | 1.2 |
+| 22 (blade base) | 5.7  | 19.4 |
+| 28              | 4.2  | 17.7 |
+| 36              | 3.1  | 15.5 |
+| 46              | 2.8  | 12.7 |
+| 55              | 3.5  | 10.3 |
+| 62              | 3.5  | 8.3  |
+| 65 (tip)        | ~3.0 | ~7.6 |
 
 ## Inner / outer face convention
 - link6 "inner" (gripping) face = local **−Y** (faces partner finger at link7).
