@@ -1,6 +1,8 @@
 # LabBot — OMX_F
 
-OpenMANIPULATOR-X follower arm — model, Isaac Sim setup, and 3D-printed attachments.
+OpenMANIPULATOR-X follower arm — model and Isaac Sim setup.
+
+> 3D-printed gripper attachments have been moved to [armchemist/gripper-attachments](https://github.com/armchemist/gripper-attachments).
 
 ## Layout
 
@@ -15,15 +17,9 @@ LabBot/
 ├── run_isaacsim_livestream.sh shell wrapper to start Isaac Sim
 ├── docs/
 │   └── ISAAC_SIM_GUIDE.md     how to launch and connect
-├── gripper_attachments/       3D-printed gripper add-ons
-│   ├── GRIPPER_DIMENSIONS.md  measured finger geometry — design reference
-│   ├── analyze_gripper.py     STL → cross-section extractor
-│   └── gripper_sleeve.scad    parameterized slide-on sleeve (V-groove / cup)
 └── .isaacsim_logs/            runtime logs (safe to delete)
 ```
 
 ## Quick start
 - **Run sim:** `./run_isaacsim_livestream.sh` — see [docs/ISAAC_SIM_GUIDE.md](docs/ISAAC_SIM_GUIDE.md)
 - **Run with OMX-F Loaded**: `./run_load_omx_f.sh`
-- **Design gripper attachment:** start from [gripper_attachments/GRIPPER_DIMENSIONS.md](gripper_attachments/GRIPPER_DIMENSIONS.md)
-# GC-IssacSim
