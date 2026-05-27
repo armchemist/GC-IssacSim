@@ -5,3 +5,4 @@
 
 # Isaac Sim logs
 .isaacsim_logs/
+.DS_Store
