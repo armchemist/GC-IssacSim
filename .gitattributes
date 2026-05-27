@@ -1,3 +1,0 @@
-*.stl filter=lfs diff=lfs merge=lfs -text
-*.usd filter=lfs diff=lfs merge=lfs -text
-*.etli filter=lfs diff=lfs merge=lfs -text
