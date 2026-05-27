@@ -1,6 +1,6 @@
 // ============================================================
-//  OMX_F Gripper — V-Groove Tip Insert
-//  Target: 13 mm OD glass test tube
+//  OMX_F Gripper — Tube-Grip Tip Insert
+//  Target: 13 mm OD glass test tube held VERTICALLY (tube axis = Z)
 //  Zone  : blade X = 55 → 65 mm (finger-local frame)
 //  Print : TPU 95A recommended (glass-safe, high friction)
 //
@@ -8,18 +8,24 @@
 //  ─────────────
 //  • Insert slides onto blade tip from +X (open end faces housing)
 //  • C-clip profile wraps blade in Y and Z → friction fit
-//  • 90° V-groove on inner face (-Y for link6, +Y for link7)
-//    sized for 13 mm tube: groove_width=13 mm, depth≈2.7 mm
+//  • Cylindrical cut on inner face (-Y for link6, +Y for link7):
+//    half-circle cradle, axis ‖ Z (vertical tube). Two fingers
+//    closing combine the two half-cradles into a full circle.
 //  • Mirrored in Y for link7 (inner face = +Y)
+//  • Top-view of grip: two ] [ profiles cradling a vertical tube.
 // ============================================================
 
 // ── USER PARAMETERS ─────────────────────────────────────────
 
 tube_od       = 13.0;   // target tube outer diameter (mm)
+tube_clear    = 0.4;    // gap between tube and cradle (mm)
 clearance     = 0.25;   // blade fit clearance (mm) — reduce if loose
 wall          = 2.2;    // min wall around blade (mm)
 clip_lip      = 0.8;    // snap-fit undercut depth on outer Y face (mm)
-groove_angle  = 90;     // V-groove included angle (deg) — 90° = self-centering
+cradle_x_frac = 0.5;    // tube center along insert X: 0=start, 1=end (0.5=mid)
+cradle_sink   = 0.0;    // mm to recess tube center into +Y past inner face
+                        //   0 = exact half-cylinder cut (cradle = half tube)
+                        //   >0 = deeper bite (more grip, less Y material)
 show_phantom  = false;  // show translucent blade for alignment check
 which_finger  = "both"; // "link6" | "link7" | "both"
 
@@ -36,10 +42,9 @@ X_END   = 65;
 INS_LEN = X_END - X_START;  // 10 mm
 
 // ── DERIVED ──────────────────────────────────────────────────
-tube_r       = tube_od / 2;
-groove_half  = tan(groove_angle/2) * tube_r;   // half-width at groove mouth
-groove_depth = tube_r * (1/sin(groove_angle/2) - 1); // tube center height
-// For 90°: groove_half=6.5 mm, groove_depth≈2.69 mm
+tube_r   = tube_od / 2;
+cradle_r = tube_r + tube_clear;          // cradle radius (cut)
+X_CTR    = X_START + cradle_x_frac * INS_LEN;
 
 // ── HELPERS ──────────────────────────────────────────────────
 function lerp(a, b, t) = a + (b-a)*t;
@@ -90,56 +95,17 @@ module blade_cavity() {
         }
 }
 
-// 90° V-groove running full length on the inner -Y face
-// The groove is centered in Z, open toward -Y
-module v_groove() {
-    // Prism: ▽ cross-section, extruded along X
-    // At each X position the groove mouth width = 2*groove_half
-    // and depth = groove_depth
-    // We cut it slightly wider than calculated to ensure full tube contact
-    gw = groove_half * 2 + 0.5;   // groove mouth width (Y)
-    gd = groove_depth + 0.4;      // groove depth (into insert, Z direction... wait)
-
-    // The V opens toward -Y (inner face).
-    // We translate so the groove sits at the -Y face surface.
-    hull()
-        for (i = [0:N]) {
-            x = X_START + i * INS_LEN / N;
-            // -Y face is at y = -(bhy(x) + wall + clearance)
-            face_y = -(bhy(x) + wall + clearance);
-            translate([x, face_y + gd, 0])
-                // Thin wedge: wide in Y, deep in -Y, zero in Z center
-                rotate([0, 90, 0])
-                    cylinder(r=0.01, h=0.01, center=true, $fn=3);
-        }
-    // Simpler approach: just use a linear_extrude-like approach via hull
-    // Actually let's do a proper swept prism:
-    linear_extrude_v_groove_inner();
-}
-
-// V-groove as a swept cut: separate module for clarity
-module linear_extrude_v_groove_inner() {
-    // Use minkowski or simple hull of wedge shapes per slice
-    gw = groove_half * 2 + 0.5;
-    gd = groove_depth + 0.5;
-
-    hull()
-        for (i = [0:N]) {
-            x = X_START + i * INS_LEN / N;
-            face_y = -(bhy(x) + wall + clearance);   // inner face -Y
-            // The V tip is deepest inside the body (toward +Y)
-            // The V mouth is at the face_y surface (outermost -Y)
-            translate([x, 0, 0]) {
-                // Mouth corners
-                translate([0, face_y, -gw/2])
-                    cube([0.01, 0.01, 0.01]);
-                translate([0, face_y, +gw/2])
-                    cube([0.01, 0.01, 0.01]);
-                // V tip
-                translate([0, face_y + gd, 0])
-                    cube([0.01, 0.01, 0.01]);
-            }
-        }
+// Cylindrical tube cradle — axis ‖ Z (vertical tube).
+// Cut center sits on (or sinks past) the inner -Y face; the cylinder
+// removes a half-circle bite from the insert in the XY plane. The two
+// fingers' bites combine into a full cylinder when the gripper closes.
+module tube_cradle() {
+    face_y = -(bhy(X_CTR) + wall + clearance);   // inner -Y face at X_CTR
+    cy     = face_y + cradle_sink;               // tube axis Y
+    // height: full Z extent of insert + margin (cuts through top/bottom)
+    h_z = max(bhz(X_START), bhz(X_END)) * 2 + 2*wall + 4*clearance + 10;
+    translate([X_CTR, cy, 0])
+        cylinder(r = cradle_r, h = h_z, center = true, $fn = 80);
 }
 
 // Snap-fit clip lip on outer +Y face (keeps insert from sliding off blade)
@@ -192,7 +158,7 @@ module insert_link6() {
             clip_lip();         // snap ridge on outer +Y
         }
         blade_cavity();
-        linear_extrude_v_groove_inner();  // V-groove on -Y face
+        tube_cradle();      // half-cylinder cut for vertical tube on -Y face
         entry_chamfer();
     }
     if (show_phantom) blade_phantom();
@@ -221,8 +187,9 @@ if (which_finger == "link6") {
 // ─────────────────────────────────────────────────────────────
 //  Material  : TPU 95A  (Shore hardness gives compliance +
 //              grip on glass; PLA/PETG alternative if no TPU)
-//  Orientation: lay flat — X along bed, V-groove face up
-//  Layer h   : 0.15 mm for smooth V surface
+//  Orientation: stand on +X end — Z axis vertical = cradle axis vertical
+//              (avoids supports inside the cradle arc).
+//  Layer h   : 0.15 mm for smooth cradle surface
 //  Walls     : 3 perimeters (no infill needed — solid is fine
 //              for such a small part)
 //  Supports  : none needed
@@ -233,10 +200,19 @@ if (which_finger == "link6") {
 //  Too tight          → increase clearance (try 0.35)
 //  Clip doesn't snap  → increase clip_lip (try 1.2)
 //
-//  V-GROOVE GEOMETRY (13 mm tube, 90° angle)
-//  ──────────────────────────────────────────
-//  groove mouth width : 13.0 mm
-//  groove depth       : ~2.7 mm
-//  tube contact angle : 45° from vertical on each side
-//  → tube self-centers and cannot roll out during motion
+//  TUBE CRADLE GEOMETRY (13 mm tube, vertical = Z axis)
+//  ─────────────────────────────────────────────────────
+//  cradle radius      : 6.5 + tube_clear mm
+//  cradle axis        : Z (tube vertical)
+//  cradle center X    : X_START + cradle_x_frac * INS_LEN  (default mid)
+//  bite shape         : half-cylinder cut into inner Y face
+//  → two fingers' bites = full circle around tube when closed
+//  → tube extends vertically through the open ends in Z
+//
+//  GEOMETRY CONSTRAINT
+//  ───────────────────
+//  Tube radius (6.5 mm) > finger half-Y at tip (~3 mm), so the cradle
+//  cuts past the finger centerline in Y. This is expected: the cradle
+//  is shared between both fingers when closed. The +Y wall remains
+//  ~(half_Z + wall - cradle_r) thick — verify visually before printing.
 // ============================================================
