@@ -30,27 +30,31 @@ IsaacSim/
 
 ---
 
-## 빠른 시작
+## 스크립트 역할
 
-### 1. 빈 Isaac Sim (확인용)
+| 스크립트 | 역할 | 실행 빈도 |
+|---|---|---|
+| `run_isaacsim_livestream.sh` | 빈 Isaac Sim (씬 없음, 확인용) | 필요할 때만 |
+| `run_load_omx_f.sh` | 팔 단독 뷰어 (물리 없음) | 필요할 때만 |
+| `run_load_omx_f_rail.sh` | 레일+팔 USD 파일 생성 | **최초 1회만** |
+| `run_teleop_omx_rail.sh` | 키보드 텔레오퍼레이션 | 매번 |
+
+> `run_load_omx_f_rail.sh`와 `run_teleop_omx_rail.sh`는 동시에 실행하지 않아도 됨.  
+> 터미널 1개로 순서대로 실행.
+
+---
+
+## 빠른 시작 — 텔레오퍼레이션
+
 ```bash
-./run_isaacsim_livestream.sh
-```
+# 최초 1회: model/omx_f_rail.usd 생성
+./run_load_omx_f_rail.sh
+# "WebRTC livestream running." 출력되면 Ctrl+C 로 종료
 
-### 2. 팔 단독 뷰어
-```bash
-./run_load_omx_f.sh
-```
-
-### 3. 레일 + 팔 키보드 텔레오퍼레이션
-```bash
-# USD 최초 생성 (1회만)
-./run_load_omx_f_rail.sh   # "WebRTC livestream running." 뜨면 Ctrl+C
-
-# 텔레오퍼 실행
+# 이후 매번: 텔레오퍼 실행
 ./run_teleop_omx_rail.sh
 ```
 
-서버 IP `166.104.223.32`, 포트 `49100` — WebRTC 클라이언트로 접속.  
-→ 자세한 접속 방법: [docs/ISAAC_SIM_GUIDE.md](docs/ISAAC_SIM_GUIDE.md)  
-→ 키 바인딩 · 아키텍처: [docs/TELEOP_GUIDE.md](docs/TELEOP_GUIDE.md)
+WebRTC 클라이언트로 `166.104.223.32` 접속 후 키보드 입력.  
+→ 접속 방법: [docs/ISAAC_SIM_GUIDE.md](docs/ISAAC_SIM_GUIDE.md)  
+→ 키 바인딩: [docs/TELEOP_GUIDE.md](docs/TELEOP_GUIDE.md)
