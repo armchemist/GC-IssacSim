@@ -162,9 +162,10 @@ def add_rect_table(stage, center_xy, top_z, footprint,
     leg_h = max(0.05, top_z - top_thick)
     ix = sx * 0.5 - leg * 0.5   # inset so legs sit at the corners
     iy = sy * 0.5 - leg * 0.5
-    for sxn in (-1, 1):
-        for syn in (-1, 1):
-            _box(f"leg_{sxn}_{syn}", (leg, leg, leg_h),
+    # USD prim names can't contain '-', so label corners px/nx, py/ny.
+    for sxn, xlbl in ((-1, "nx"), (1, "px")):
+        for syn, ylbl in ((-1, "ny"), (1, "py")):
+            _box(f"leg_{xlbl}_{ylbl}", (leg, leg, leg_h),
                  (cx + sxn * ix, cy + syn * iy, leg_h * 0.5))
 
     return root.GetPrim()
