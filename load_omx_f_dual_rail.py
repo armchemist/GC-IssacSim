@@ -58,8 +58,11 @@ omni.kit.commands.execute(
 omni.usd.get_context().open_stage(USD_OUT)
 stage = omni.usd.get_context().get_stage()
 
-# Decorate: NVIDIA indoor environment (brings its own floor + lighting).
-lab_scene.add_lab_environment(stage)
+# Decorate: NVIDIA environment + bench, put the robot on the bench edge, and
+# add the glassware (test-tube rack, tubes, beakers) for a visual preview.
+bench = lab_scene.add_lab_environment(stage)
+lab_scene.place_robot_on_bench(stage, bench)
+lab_scene.add_lab_glassware(stage, bench)
 
 print(f"[load_omx_f_dual_rail] USD saved: {USD_OUT}")
 print("[load_omx_f_dual_rail] WebRTC livestream running.")

@@ -58,8 +58,7 @@ simulation_app.update()  # let stage settle
 stage = omni.usd.get_context().get_stage()
 
 # ── Decorate scene (before world.reset so colliders register) ─
-lab_scene.add_lab_environment(stage)
-lab_scene.spawn_beakers(stage)
+bench = lab_scene.add_lab_environment(stage)
 
 # Fallback light only if the environment did not provide one.
 if not stage.GetPrimAtPath("/World/DistantLight").IsValid() and \
@@ -79,6 +78,11 @@ art_path = find_articulation_path(stage)
 if art_path is None:
     raise RuntimeError("No ArticulationRootAPI found in stage. Check USD generation.")
 print(f"[teleop] Articulation root: {art_path}")
+
+# Put the rail+arms on one edge of the bench (arms facing across), then place
+# the glassware in reach — all before world.reset() so colliders register.
+lab_scene.place_robot_on_bench(stage, bench, art_path)
+lab_scene.add_lab_glassware(stage, bench)
 
 # ── Set up physics world ──────────────────────────────────────
 from isaacsim.core.api import World

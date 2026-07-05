@@ -7,6 +7,7 @@ conda activate isaac_sim
 
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1}
 export PUBLIC_ENDPOINT_ADDRESS=166.104.223.32
+export PYTHONUNBUFFERED=1   # flush [lab_scene]/[teleop] prints immediately
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="$PROJECT_DIR/.isaacsim_logs"

@@ -1,18 +1,24 @@
 """Lab scene decoration helpers for the OMX_F dual-rail simulation.
 
 Shared by load_omx_f_dual_rail.py (viewer / USD generation) and
-teleop_omx_dual_rail.py (physics). Two pieces:
+teleop_omx_dual_rail.py (physics). Pipeline:
 
   add_lab_environment(stage)  — reference an NVIDIA indoor environment USD
-                                (Simple_Room) so the scene looks like a room
-                                instead of an empty grid, then swap its rounded
-                                built-in table for a plain rectangular 4-leg desk.
-  spawn_beakers(stage, ...)   — procedural translucent cylinders with rigid-body
-                                physics, so the arms can pick them up / knock
-                                them over.
+                                (Simple_Room), swap its rounded built-in table
+                                for a plain rectangular bench, and return the
+                                bench placement (center / top_z / size).
+  place_robot_on_bench(...)   — sit the rail+arms on one edge of that bench and
+                                yaw them so the arms face across to the far side.
+  add_lab_glassware(...)      — beakers, a test-tube rack, and test tubes on the
+                                bench top, within the arms' reach. Beakers/tubes
+                                are rigid bodies so they can be picked up.
 
-Both are best-effort: if the NVIDIA asset server is unreachable the environment
-is skipped (with a warning) and the rest of the scene still loads.
+Geometry note: the arm's reach axis and the rail travel axis are both the robot
+LOCAL +X. Yawing the whole robot by -90 deg about Z maps local +X to world -Y,
+so the rail lies along the bench depth and both arms reach toward the far edge.
+
+Everything is best-effort: if the NVIDIA asset server is unreachable the
+environment is skipped and a default bench at the origin is used instead.
 """
 
 from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Sdf, Gf
@@ -20,13 +26,20 @@ from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Sdf, Gf
 # Relative path of the indoor environment on the NVIDIA asset server.
 ENV_REL_PATH = "/Isaac/Environments/Simple_Room/simple_room.usd"
 
+# Bench sized to comfortably hold the 0.7 m rail + two arms + glassware.
+BENCH_SIZE = (1.3, 0.9)          # (x, y) metres
+BENCH_EDGE_INSET = 0.12          # rail sits this far in from the back (+y) edge
+ROBOT_YAW_DEG = -90.0            # local +X (reach/rail) -> world -Y (across bench)
+DEFAULT_BENCH = {"center": (0.0, 0.0), "top_z": 0.30, "size": BENCH_SIZE}
 
+
+# ─────────────────────────── environment ────────────────────────────
 def add_lab_environment(stage, prim_path="/World/Environment"):
-    """Reference an NVIDIA indoor environment USD under `prim_path`.
+    """Reference an NVIDIA indoor environment and build the lab bench.
 
-    Returns the env Usd.Prim on success, or None if the asset root could not be
-    resolved (offline). The environment ships its own floor + lighting, so the
-    caller should NOT also add a procedural ground plane.
+    Returns a bench dict {center:(x,y), top_z, size:(sx,sy)} used by
+    place_robot_on_bench() and add_lab_glassware(). Falls back to a default
+    origin bench if the asset root cannot be resolved (offline).
     """
     try:
         from isaacsim.storage.native import get_assets_root_path
@@ -36,8 +49,9 @@ def add_lab_environment(stage, prim_path="/World/Environment"):
     assets_root = get_assets_root_path()
     if not assets_root:
         print("[lab_scene] WARNING: assets root unresolved (offline?) — "
-              "skipping NVIDIA environment.")
-        return None
+              "skipping NVIDIA environment, using default bench.")
+        return add_rect_table(stage, DEFAULT_BENCH["center"],
+                              DEFAULT_BENCH["top_z"], DEFAULT_BENCH["size"])[1]
 
     env_usd = assets_root + ENV_REL_PATH
     env_prim = stage.DefinePrim(prim_path, "Xform")
@@ -48,9 +62,8 @@ def add_lab_environment(stage, prim_path="/World/Environment"):
     # PhysicsScene fights the robot's. Deactivate any env-side ones.
     _disable_nested_physics_scenes(stage, prim_path)
 
-    # Simple_Room ships a rounded table; swap it for a plain rectangular desk.
-    replace_env_table_with_desk(stage, prim_path)
-    return env_prim
+    # Swap Simple_Room's rounded table for a plain rectangular bench.
+    return replace_env_table_with_bench(stage, prim_path)
 
 
 def _disable_nested_physics_scenes(stage, root_path):
@@ -61,26 +74,16 @@ def _disable_nested_physics_scenes(stage, root_path):
             print(f"[lab_scene] Disabled nested PhysicsScene: {prim.GetPath()}")
 
 
-def _world_aabb(prim):
-    """World-space axis-aligned bounding box (min, max) Gf.Vec3d of `prim`."""
-    cache = UsdGeom.BBoxCache(
-        Usd.TimeCode.Default(),
-        [UsdGeom.Tokens.default_, UsdGeom.Tokens.render],
-    )
-    rng = cache.ComputeWorldBound(prim).ComputeAlignedRange()
-    return rng.GetMin(), rng.GetMax()
+def replace_env_table_with_bench(stage, env_root="/World/Environment"):
+    """Deactivate the environment's built-in table(s) and build our own plain
+    rectangular bench at a fixed, known spot (DEFAULT_BENCH).
 
-
-def replace_env_table_with_desk(stage, env_root="/World/Environment"):
-    """Deactivate the environment's built-in table(s) and drop a plain
-    rectangular 4-leg desk in the same footprint.
-
-    The desk size/position is derived from the original table's world bounding
-    box, so no hard-coded coordinates are needed. No-op if no table prim is
-    found under `env_root`.
+    We intentionally do NOT reuse the env table's bounding box for placement:
+    the referenced table geometry is not reliably bounded at this point in
+    startup (empty bbox -> garbage coordinates). A fixed bench is robust and
+    the arms/glassware are positioned relative to it.
     """
     root = Sdf.Path(env_root)
-    # Collect top-level table prims (skip descendants of an already-matched one).
     tables = []
     for prim in stage.Traverse():
         path = prim.GetPath()
@@ -92,149 +95,235 @@ def replace_env_table_with_desk(stage, env_root="/World/Environment"):
             continue  # nested mesh under a table group already captured
         tables.append(prim)
 
-    if not tables:
-        print("[lab_scene] No env table prim found — skipping desk swap.")
-        return []
-
-    desks = []
-    for i, tprim in enumerate(tables):
-        try:
-            mn, mx = _world_aabb(tprim)
-        except Exception as e:
-            print(f"[lab_scene] WARNING: bbox failed for {tprim.GetPath()}: {e}")
-            continue
+    for tprim in tables:
         tprim.SetActive(False)
-        center = ((mn[0] + mx[0]) * 0.5, (mn[1] + mx[1]) * 0.5)
-        top_z = float(mx[2])
-        footprint = (max(0.4, float(mx[0] - mn[0])),
-                     max(0.4, float(mx[1] - mn[1])))
-        desk = add_rect_table(stage, center, top_z, footprint,
-                              path=f"/World/LabDesk_{i}")
-        desks.append(desk)
-        print(f"[lab_scene] Replaced env table {tprim.GetPath()} "
-              f"-> rectangular desk (top_z={top_z:.3f})")
-    return desks
+        print(f"[lab_scene] Deactivated env table {tprim.GetPath()}")
+    if not tables:
+        print("[lab_scene] No env table prim found (nothing to hide).")
+
+    _, bench = add_rect_table(stage, DEFAULT_BENCH["center"],
+                              DEFAULT_BENCH["top_z"], DEFAULT_BENCH["size"],
+                              path="/World/LabBench")
+    print(f"[lab_scene] Built bench at {bench['center']} top_z={bench['top_z']}")
+    return bench
 
 
-def _get_or_create_wood_material(stage, mtl_path="/World/Looks/DeskWood"):
+# ──────────────────────────── materials ─────────────────────────────
+def _get_or_create_preview_material(stage, mtl_path, diffuse,
+                                    opacity=1.0, roughness=0.5, metallic=0.0):
     if stage.GetPrimAtPath(mtl_path).IsValid():
         return UsdShade.Material.Get(stage, mtl_path)
     material = UsdShade.Material.Define(stage, mtl_path)
     shader = UsdShade.Shader.Define(stage, mtl_path + "/Shader")
     shader.CreateIdAttr("UsdPreviewSurface")
     shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
-        Gf.Vec3f(0.55, 0.38, 0.22))
-    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.6)
-    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+        Gf.Vec3f(*diffuse))
+    shader.CreateInput("opacity", Sdf.ValueTypeNames.Float).Set(opacity)
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(roughness)
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(metallic)
     material.CreateSurfaceOutput().ConnectToSource(
         shader.ConnectableAPI(), "surface")
     return material
+
+
+def _wood_material(stage):
+    return _get_or_create_preview_material(
+        stage, "/World/Looks/BenchWood", (0.55, 0.38, 0.22), roughness=0.6)
+
+
+def _glass_material(stage):
+    return _get_or_create_preview_material(
+        stage, "/World/Looks/Glass", (0.70, 0.85, 0.90),
+        opacity=0.25, roughness=0.1)
+
+
+def _plastic_material(stage):
+    return _get_or_create_preview_material(
+        stage, "/World/Looks/RackPlastic", (0.10, 0.35, 0.55), roughness=0.4)
+
+
+# ─────────────────────────── box primitive ──────────────────────────
+def _make_box(stage, path, size, translate, material=None, collider=True):
+    """Axis-aligned box from a unit cube scaled to `size`, centred at
+    `translate`. Static collider by default."""
+    cube = UsdGeom.Cube.Define(stage, path)
+    cube.CreateSizeAttr(1.0)
+    cube.CreateExtentAttr([(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)])
+    xf = UsdGeom.Xformable(cube)
+    xf.AddTranslateOp().Set(Gf.Vec3d(*translate))
+    xf.AddScaleOp().Set(Gf.Vec3f(size[0], size[1], size[2]))
+    prim = cube.GetPrim()
+    if collider:
+        UsdPhysics.CollisionAPI.Apply(prim)
+    if material is not None:
+        UsdShade.MaterialBindingAPI(prim).Bind(material)
+    return prim
 
 
 def add_rect_table(stage, center_xy, top_z, footprint,
-                   path="/World/LabDesk", top_thick=0.04, leg=0.05):
-    """Build a plain rectangular table: one top slab + four legs, as a static
-    collider. `center_xy`=(x,y), `top_z`=top surface height, `footprint`=(sx,sy).
+                   path="/World/LabBench", top_thick=0.04, leg=0.06):
+    """Rectangular table: top slab + four legs (static collider).
+
+    Returns (root_prim, bench_dict). `bench_dict` = {center, top_z, size}.
     """
     cx, cy = center_xy
     sx, sy = footprint
-    material = _get_or_create_wood_material(stage)
-
+    material = _wood_material(stage)
     root = UsdGeom.Xform.Define(stage, path)
 
-    def _box(sub, size, translate):
-        p = f"{path}/{sub}"
-        cube = UsdGeom.Cube.Define(stage, p)
-        cube.CreateSizeAttr(1.0)  # unit cube, scaled below
-        cube.CreateExtentAttr([(-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)])
-        xf = UsdGeom.Xformable(cube)
-        xf.AddTranslateOp().Set(Gf.Vec3d(*translate))
-        xf.AddScaleOp().Set(Gf.Vec3f(size[0], size[1], size[2]))
-        prim = cube.GetPrim()
-        UsdPhysics.CollisionAPI.Apply(prim)           # static collider
-        UsdShade.MaterialBindingAPI(prim).Bind(material)
-        return prim
+    # Top slab, upper face at top_z.
+    _make_box(stage, f"{path}/top", (sx, sy, top_thick),
+              (cx, cy, top_z - top_thick * 0.5), material)
 
-    # Top slab (centred so its upper face sits at top_z).
-    _box("top", (sx, sy, top_thick), (cx, cy, top_z - top_thick * 0.5))
-
-    # Four legs from floor (z=0) up to the underside of the slab.
+    # Legs from floor to underside of slab.
     leg_h = max(0.05, top_z - top_thick)
-    ix = sx * 0.5 - leg * 0.5   # inset so legs sit at the corners
+    ix = sx * 0.5 - leg * 0.5
     iy = sy * 0.5 - leg * 0.5
-    # USD prim names can't contain '-', so label corners px/nx, py/ny.
-    for sxn, xlbl in ((-1, "nx"), (1, "px")):
-        for syn, ylbl in ((-1, "ny"), (1, "py")):
-            _box(f"leg_{xlbl}_{ylbl}", (leg, leg, leg_h),
-                 (cx + sxn * ix, cy + syn * iy, leg_h * 0.5))
+    for sxn, xl in ((-1, "nx"), (1, "px")):
+        for syn, yl in ((-1, "ny"), (1, "py")):
+            _make_box(stage, f"{path}/leg_{xl}_{yl}", (leg, leg, leg_h),
+                      (cx + sxn * ix, cy + syn * iy, leg_h * 0.5), material)
 
-    return root.GetPrim()
-
-
-def _get_or_create_glass_material(stage, mtl_path="/World/Looks/BeakerGlass"):
-    """A simple translucent material so beakers read as glassware."""
-    if stage.GetPrimAtPath(mtl_path).IsValid():
-        return UsdShade.Material.Get(stage, mtl_path)
-
-    material = UsdShade.Material.Define(stage, mtl_path)
-    shader = UsdShade.Shader.Define(stage, mtl_path + "/Shader")
-    shader.CreateIdAttr("UsdPreviewSurface")
-    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(
-        Gf.Vec3f(0.7, 0.85, 0.9))
-    shader.CreateInput("opacity", Sdf.ValueTypeNames.Float).Set(0.25)
-    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.1)
-    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
-    material.CreateSurfaceOutput().ConnectToSource(
-        shader.ConnectableAPI(), "surface")
-    return material
+    bench = {"center": (cx, cy), "top_z": top_z, "size": (sx, sy)}
+    return root.GetPrim(), bench
 
 
-# Default beaker layout: a small cluster in front of the cart, within the
-# ~0.3 m reach of the arms. Coordinates are in metres, world frame.
-DEFAULT_BEAKER_POSITIONS = [
-    (0.28, 0.10, 0.05),
-    (0.30, 0.00, 0.05),
-    (0.28, -0.10, 0.05),
-    (0.20, 0.06, 0.05),
-    (0.20, -0.06, 0.05),
-]
+# ──────────────────────── robot placement ───────────────────────────
+def _find_articulation_root(stage):
+    for prim in stage.Traverse():
+        if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+            return str(prim.GetPath())
+    return None
 
 
-def spawn_beakers(stage, positions=None, parent_path="/World/Beakers",
-                  radius=0.018, height=0.06, mass=0.05):
-    """Create translucent rigid-body cylinders (beakers) at `positions`.
-
-    Each beaker gets RigidBodyAPI + CollisionAPI + MassAPI so it falls under
-    gravity and can be grasped. Call BEFORE world.reset() so the colliders are
-    registered in the physics view.
+def place_robot_on_bench(stage, bench, root_path=None):
+    """Sit the robot on the back (+y) edge of `bench`, yawed so the arms face
+    across to the far edge. Sets a translate+rotateZ on the articulation root.
     """
-    if positions is None:
-        positions = DEFAULT_BEAKER_POSITIONS
+    if bench is None:
+        print("[lab_scene] No bench — leaving robot at origin.")
+        return
+    if root_path is None:
+        root_path = _find_articulation_root(stage)
+    if not root_path:
+        print("[lab_scene] WARNING: articulation root not found — "
+              "cannot place robot on bench.")
+        return
 
+    prim = stage.GetPrimAtPath(root_path)
+    cx, cy = bench["center"]
+    top_z = bench["top_z"]
+    _, sy = bench["size"]
+    back_y = cy + sy * 0.5 - BENCH_EDGE_INSET   # rail origin near back edge
+
+    xf = UsdGeom.Xformable(prim)
+    xf.ClearXformOpOrder()
+    xf.AddTranslateOp().Set(Gf.Vec3d(cx, back_y, top_z))
+    xf.AddRotateZOp().Set(ROBOT_YAW_DEG)
+    print(f"[lab_scene] Placed robot on bench: pos=({cx:.3f},{back_y:.3f},"
+          f"{top_z:.3f}) yaw={ROBOT_YAW_DEG}")
+
+
+# ──────────────────────────── glassware ─────────────────────────────
+def _spawn_rigid_cylinder(stage, path, pos, radius, height, mass, material):
+    cyl = UsdGeom.Cylinder.Define(stage, path)
+    cyl.CreateAxisAttr("Z")
+    cyl.CreateRadiusAttr(radius)
+    cyl.CreateHeightAttr(height)
+    cyl.CreateExtentAttr([(-radius, -radius, -height / 2.0),
+                          (radius, radius, height / 2.0)])
+    UsdGeom.Xformable(cyl).AddTranslateOp().Set(Gf.Vec3d(*pos))
+    prim = cyl.GetPrim()
+    UsdPhysics.CollisionAPI.Apply(prim)
+    UsdPhysics.RigidBodyAPI.Apply(prim)
+    UsdPhysics.MassAPI.Apply(prim).CreateMassAttr(mass)
+    UsdShade.MaterialBindingAPI(prim).Bind(material)
+    return prim
+
+
+def spawn_beakers(stage, positions, parent_path="/World/Beakers",
+                  radius=0.03, height=0.08, mass=0.05):
+    """Translucent rigid-body cylinders (beakers). `positions` are the centres
+    of each beaker's base (bottom sits at z, body rises upward)."""
     stage.DefinePrim(parent_path, "Scope")
-    material = _get_or_create_glass_material(stage)
-
+    material = _glass_material(stage)
     prims = []
     for i, (x, y, z) in enumerate(positions):
-        path = f"{parent_path}/beaker_{i}"
-        cyl = UsdGeom.Cylinder.Define(stage, path)
-        cyl.CreateAxisAttr("Z")
-        cyl.CreateRadiusAttr(radius)
-        cyl.CreateHeightAttr(height)
-        cyl.CreateExtentAttr([(-radius, -radius, -height / 2.0),
-                              (radius, radius, height / 2.0)])
-
-        xf = UsdGeom.Xformable(cyl)
-        xf.AddTranslateOp().Set(Gf.Vec3d(x, y, z))
-
-        prim = cyl.GetPrim()
-        UsdPhysics.CollisionAPI.Apply(prim)
-        UsdPhysics.RigidBodyAPI.Apply(prim)
-        mass_api = UsdPhysics.MassAPI.Apply(prim)
-        mass_api.CreateMassAttr(mass)
-
-        UsdShade.MaterialBindingAPI(prim).Bind(material)
-        prims.append(prim)
-
-    print(f"[lab_scene] Spawned {len(prims)} beakers under {parent_path}")
+        prims.append(_spawn_rigid_cylinder(
+            stage, f"{parent_path}/beaker_{i}", (x, y, z + height * 0.5),
+            radius, height, mass, material))
+    print(f"[lab_scene] Spawned {len(prims)} beakers")
     return prims
+
+
+def add_test_tube_rack(stage, center_xy, top_z, n=5, path="/World/TubeRack"):
+    """Static rack: base slab + four posts + a top border frame. Returns the
+    (x, y) slot centres where test tubes should stand."""
+    cx, cy = center_xy
+    mat = _plastic_material(stage)
+    UsdGeom.Xform.Define(stage, path)
+
+    spacing = 0.030
+    width = spacing * n + 0.02      # x extent
+    depth = 0.055                   # y extent
+    base_t = 0.012
+    post_h = 0.10
+    bar = 0.008
+
+    # Base slab sitting on the bench top.
+    _make_box(stage, f"{path}/base", (width, depth, base_t),
+              (cx, cy, top_z + base_t * 0.5), mat)
+
+    ix = width * 0.5 - bar * 0.5
+    iy = depth * 0.5 - bar * 0.5
+    # Four corner posts.
+    for sxn, xl in ((-1, "nx"), (1, "px")):
+        for syn, yl in ((-1, "ny"), (1, "py")):
+            _make_box(stage, f"{path}/post_{xl}_{yl}", (bar, bar, post_h),
+                      (cx + sxn * ix, cy + syn * iy, top_z + post_h * 0.5), mat)
+    # Top border frame (holds tubes upright, reads as slotted rack).
+    ztop = top_z + post_h
+    _make_box(stage, f"{path}/rail_ny", (width, bar, bar), (cx, cy - iy, ztop), mat)
+    _make_box(stage, f"{path}/rail_py", (width, bar, bar), (cx, cy + iy, ztop), mat)
+    _make_box(stage, f"{path}/rail_nx", (bar, depth, bar), (cx - ix, cy, ztop), mat)
+    _make_box(stage, f"{path}/rail_px", (bar, depth, bar), (cx + ix, cy, ztop), mat)
+
+    x0 = cx - spacing * (n - 1) * 0.5
+    slots = [(x0 + i * spacing, cy) for i in range(n)]
+    print(f"[lab_scene] Test-tube rack with {n} slots at {center_xy}")
+    return slots, top_z + base_t
+
+
+def spawn_test_tubes(stage, slots, stand_z, parent_path="/World/TestTubes",
+                     radius=0.007, height=0.12, mass=0.02):
+    """Thin rigid-body cylinders standing in the rack slots."""
+    stage.DefinePrim(parent_path, "Scope")
+    material = _glass_material(stage)
+    prims = []
+    for i, (x, y) in enumerate(slots):
+        prims.append(_spawn_rigid_cylinder(
+            stage, f"{parent_path}/tube_{i}", (x, y, stand_z + height * 0.5),
+            radius, height, mass, material))
+    print(f"[lab_scene] Spawned {len(prims)} test tubes")
+    return prims
+
+
+def add_lab_glassware(stage, bench):
+    """Place a test-tube rack (+tubes) and a few beakers on the bench top,
+    inside the arms' reach in front of the rail."""
+    if bench is None:
+        return
+    cx, cy = bench["center"]
+    top_z = bench["top_z"]
+
+    # Reach band: in front of the rail (toward -y from the back edge), roughly
+    # 0.10–0.15 m from bench centre so the cart can drive up to it.
+    rack_center = (cx - 0.13, cy + 0.12)
+    slots, stand_z = add_test_tube_rack(stage, rack_center, top_z, n=5)
+    spawn_test_tubes(stage, slots, stand_z)
+
+    spawn_beakers(stage, [
+        (cx + 0.10, cy + 0.14, top_z),
+        (cx + 0.18, cy + 0.04, top_z),
+        (cx + 0.06, cy + 0.02, top_z),
+    ])
