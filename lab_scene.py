@@ -7,15 +7,14 @@ teleop_omx_dual_rail.py (physics). Pipeline:
                                 (Simple_Room), swap its rounded built-in table
                                 for a plain rectangular bench, and return the
                                 bench placement (center / top_z / size).
-  place_robot_on_bench(...)   — sit the rail+arms on one edge of that bench and
-                                yaw them so the arms face across to the far side.
   add_lab_glassware(...)      — beakers, a test-tube rack, and test tubes on the
                                 bench top, within the arms' reach. Beakers/tubes
                                 are rigid bodies so they can be picked up.
 
-Geometry note: the arm's reach axis and the rail travel axis are both the robot
-LOCAL +X. Yawing the whole robot by -90 deg about Z maps local +X to world -Y,
-so the rail lies along the bench depth and both arms reach toward the far edge.
+The rail+arms are positioned by the URDF itself (world_to_rail_base is baked to
+sit the rail on the bench top and run the full length of the bench's long (X)
+edge, arms facing across toward -Y). Keep DEFAULT_BENCH here in sync with that
+bake — see model/omx_f_dual_on_rail.urdf.
 
 Everything is best-effort: if the NVIDIA asset server is unreachable the
 environment is skipped and a default bench at the origin is used instead.
@@ -26,10 +25,10 @@ from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Sdf, Gf
 # Relative path of the indoor environment on the NVIDIA asset server.
 ENV_REL_PATH = "/Isaac/Environments/Simple_Room/simple_room.usd"
 
-# Bench sized to comfortably hold the 0.7 m rail + two arms + glassware.
-BENCH_SIZE = (1.3, 0.9)          # (x, y) metres
-BENCH_EDGE_INSET = 0.12          # rail sits this far in from the back (+y) edge
-ROBOT_YAW_DEG = -90.0            # local +X (reach/rail) -> world -Y (across bench)
+# Bench sized so its long (X) edge holds the full 1.25 m rail + glassware.
+# Must stay consistent with the placement baked into omx_f_dual_on_rail.urdf
+# (rail centred on X, near +Y edge, top surface at top_z).
+BENCH_SIZE = (1.3, 0.9)          # (x, y) metres — long edge is X
 DEFAULT_BENCH = {"center": (0.0, 0.0), "top_z": 0.30, "size": BENCH_SIZE}
 
 
@@ -188,42 +187,6 @@ def add_rect_table(stage, center_xy, top_z, footprint,
     return root.GetPrim(), bench
 
 
-# ──────────────────────── robot placement ───────────────────────────
-def _find_articulation_root(stage):
-    for prim in stage.Traverse():
-        if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
-            return str(prim.GetPath())
-    return None
-
-
-def place_robot_on_bench(stage, bench, root_path=None):
-    """Sit the robot on the back (+y) edge of `bench`, yawed so the arms face
-    across to the far edge. Sets a translate+rotateZ on the articulation root.
-    """
-    if bench is None:
-        print("[lab_scene] No bench — leaving robot at origin.")
-        return
-    if root_path is None:
-        root_path = _find_articulation_root(stage)
-    if not root_path:
-        print("[lab_scene] WARNING: articulation root not found — "
-              "cannot place robot on bench.")
-        return
-
-    prim = stage.GetPrimAtPath(root_path)
-    cx, cy = bench["center"]
-    top_z = bench["top_z"]
-    _, sy = bench["size"]
-    back_y = cy + sy * 0.5 - BENCH_EDGE_INSET   # rail origin near back edge
-
-    xf = UsdGeom.Xformable(prim)
-    xf.ClearXformOpOrder()
-    xf.AddTranslateOp().Set(Gf.Vec3d(cx, back_y, top_z))
-    xf.AddRotateZOp().Set(ROBOT_YAW_DEG)
-    print(f"[lab_scene] Placed robot on bench: pos=({cx:.3f},{back_y:.3f},"
-          f"{top_z:.3f}) yaw={ROBOT_YAW_DEG}")
-
-
 # ──────────────────────────── glassware ─────────────────────────────
 def _spawn_rigid_cylinder(stage, path, pos, radius, height, mass, material):
     cyl = UsdGeom.Cylinder.Define(stage, path)
@@ -310,20 +273,22 @@ def spawn_test_tubes(stage, slots, stand_z, parent_path="/World/TestTubes",
 
 def add_lab_glassware(stage, bench):
     """Place a test-tube rack (+tubes) and a few beakers on the bench top,
-    inside the arms' reach in front of the rail."""
+    inside the arms' reach in front of the rail.
+
+    The rail runs along the bench long (X) edge near the back (+Y); both arms
+    reach across toward -Y. Items are spread along X (the cart drives to them)
+    at y ~0.05–0.12 (about 0.2 m in front of the rail)."""
     if bench is None:
         return
     cx, cy = bench["center"]
     top_z = bench["top_z"]
 
-    # Reach band: in front of the rail (toward -y from the back edge), roughly
-    # 0.10–0.15 m from bench centre so the cart can drive up to it.
-    rack_center = (cx - 0.13, cy + 0.12)
+    rack_center = (cx - 0.20, cy + 0.10)
     slots, stand_z = add_test_tube_rack(stage, rack_center, top_z, n=5)
     spawn_test_tubes(stage, slots, stand_z)
 
     spawn_beakers(stage, [
-        (cx + 0.10, cy + 0.14, top_z),
-        (cx + 0.18, cy + 0.04, top_z),
-        (cx + 0.06, cy + 0.02, top_z),
+        (cx + 0.10, cy + 0.12, top_z),
+        (cx + 0.22, cy + 0.05, top_z),
+        (cx - 0.05, cy + 0.05, top_z),
     ])

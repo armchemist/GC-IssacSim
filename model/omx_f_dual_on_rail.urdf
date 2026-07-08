@@ -1,77 +1,86 @@
 <?xml version="1.0" ?>
 <!-- TWO OMX_F arms on ONE shared cart of an LSM4-NK235630x linear rail.
-     Generated from omx_f_on_rail.urdf by tmp/gen_dual_urdf.py — do not edit by hand;
-     edit the single-arm URDF + generator instead. -->
+     Arm chains derived from omx_f_on_rail.urdf (l_/r_ prefixed). The header
+     (rail / cart / mounts / world placement) is hand-tuned to sit the rail on
+     the lab bench: rail runs the full length of the bench's long (X) edge and
+     both arms face across the bench toward -Y.
+     Bench assumed at world origin, top surface z = 0.30 m (see lab_scene.py
+     DEFAULT_BENCH — keep these in sync). -->
 <robot name="omx_f_dual_on_rail">
 
   <!-- ── WORLD ─────────────────────────────────────────────── -->
   <link name="world"/>
 
-  <!-- ── RAIL BASE (fixed to world) ────────────────────────── -->
-  <!-- Box: 700 mm × 80 mm × 40 mm, centred at (315, 0, 20) mm -->
+  <!-- ── RAIL BASE (fixed to world, baked onto the bench top) ── -->
+  <!-- Box: 1250 mm × 80 mm × 40 mm, local origin at (625, 0, 20) mm so the
+       bar spans local X 0–1.25 m. -->
   <link name="rail_base">
     <visual>
-      <origin rpy="0 0 0" xyz="0.315 0 0.020"/>
-      <geometry><box size="0.700 0.080 0.040"/></geometry>
+      <origin rpy="0 0 0" xyz="0.625 0 0.020"/>
+      <geometry><box size="1.250 0.080 0.040"/></geometry>
       <material name="dark_grey"><color rgba="0.25 0.25 0.25 1"/></material>
     </visual>
     <collision>
-      <origin rpy="0 0 0" xyz="0.315 0 0.020"/>
-      <geometry><box size="0.700 0.080 0.040"/></geometry>
+      <origin rpy="0 0 0" xyz="0.625 0 0.020"/>
+      <geometry><box size="1.250 0.080 0.040"/></geometry>
     </collision>
     <inertial>
-      <origin xyz="0.315 0 0.020"/>
-      <mass value="3.0"/>
-      <inertia ixx="0.002" ixy="0" ixz="0" iyy="0.123" iyz="0" izz="0.124"/>
+      <origin xyz="0.625 0 0.020"/>
+      <mass value="4.0"/>
+      <inertia ixx="0.003" ixy="0" ixz="0" iyy="0.521" iyz="0" izz="0.523"/>
     </inertial>
   </link>
 
+  <!-- Placement baked here: rail centred on the bench long (X) axis (shift
+       -0.625), near the back (+Y) edge (0.30), on the bench top (z = 0.30). -->
   <joint name="world_to_rail_base" type="fixed">
     <parent link="world"/>
     <child link="rail_base"/>
-    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <origin rpy="0 0 0" xyz="-0.625 0.30 0.30"/>
   </joint>
 
-  <!-- ── RAIL CART (prismatic, slides along X) — WIDENED in Y for two arms ── -->
-  <!-- Box: 120 mm × 220 mm × 60 mm, visual offset 30 mm above joint -->
+  <!-- ── RAIL CART (prismatic, slides along X) ── -->
+  <!-- Box: 300 mm × 140 mm × 60 mm, visual offset 30 mm above joint -->
   <link name="rail_cart">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0.030"/>
-      <geometry><box size="0.120 0.220 0.060"/></geometry>
+      <geometry><box size="0.300 0.140 0.060"/></geometry>
       <material name="mid_grey"><color rgba="0.5 0.5 0.5 1"/></material>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0.030"/>
-      <geometry><box size="0.120 0.220 0.060"/></geometry>
+      <geometry><box size="0.300 0.140 0.060"/></geometry>
     </collision>
     <inertial>
       <origin xyz="0 0 0.030"/>
       <mass value="1.0"/>
-      <inertia ixx="4.13e-3" ixy="0" ixz="0" iyy="1.50e-3" iyz="0" izz="5.23e-3"/>
+      <inertia ixx="1.93e-3" ixy="0" ixz="0" iyy="7.80e-3" iyz="0" izz="9.13e-3"/>
     </inertial>
   </link>
 
-  <!-- Travel: 0 – 630 mm along X, joint origin on top surface of rail_base -->
+  <!-- Travel: 0 – 1100 mm along X, joint origin on top surface of rail_base -->
   <joint name="rail_joint" type="prismatic">
     <parent link="rail_base"/>
     <child link="rail_cart"/>
     <axis xyz="1 0 0"/>
     <origin rpy="0 0 0" xyz="0 0 0.040"/>
-    <limit effort="100" lower="0" upper="0.630" velocity="0.5"/>
+    <limit effort="100" lower="0" upper="1.100" velocity="0.5"/>
     <dynamics damping="10.0" friction="0.0"/>
   </joint>
 
-  <!-- ── TWO ARM MOUNTS (fixed, arms sit 60 mm above cart top, +/-75 mm in Y) ── -->
+  <!-- ── TWO ARM MOUNTS ── -->
+  <!-- Arms offset ±90 mm ALONG the rail (X), each yawed -90° so the arm's
+       reach axis (local +X) points across the bench toward -Y. -->
   <joint name="l_arm_mount" type="fixed">
     <parent link="rail_cart"/>
     <child link="l_link0"/>
-    <origin rpy="0 0 0" xyz="0 0.075 0.060"/>
+    <origin rpy="0 0 -1.5707963" xyz="0.09 0 0.060"/>
   </joint>
 
   <joint name="r_arm_mount" type="fixed">
     <parent link="rail_cart"/>
     <child link="r_link0"/>
-    <origin rpy="0 0 0" xyz="0 -0.075 0.060"/>
+    <origin rpy="0 0 -1.5707963" xyz="-0.09 0 0.060"/>
   </joint>
 
   <!-- ════════════ LEFT ARM (l_) ════════════ -->

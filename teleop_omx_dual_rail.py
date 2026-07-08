@@ -79,9 +79,8 @@ if art_path is None:
     raise RuntimeError("No ArticulationRootAPI found in stage. Check USD generation.")
 print(f"[teleop] Articulation root: {art_path}")
 
-# Put the rail+arms on one edge of the bench (arms facing across), then place
-# the glassware in reach — all before world.reset() so colliders register.
-lab_scene.place_robot_on_bench(stage, bench, art_path)
+# The rail's placement on the bench is baked into the URDF; just add the
+# glassware in reach — before world.reset() so colliders register.
 lab_scene.add_lab_glassware(stage, bench)
 
 # ── Set up physics world ──────────────────────────────────────
@@ -104,7 +103,7 @@ if positions is None:
 else:
     positions = positions.copy()
 
-RAIL_MAX = 0.630
+RAIL_MAX = 1.100   # matches rail_joint upper limit in omx_f_dual_on_rail.urdf
 RAIL_STEP = 0.003   # m per frame
 ARM_STEP  = 0.020   # rad per frame
 GRIP_OPEN = 0.8     # rad open position

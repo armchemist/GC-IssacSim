@@ -58,10 +58,9 @@ omni.kit.commands.execute(
 omni.usd.get_context().open_stage(USD_OUT)
 stage = omni.usd.get_context().get_stage()
 
-# Decorate: NVIDIA environment + bench, put the robot on the bench edge, and
-# add the glassware (test-tube rack, tubes, beakers) for a visual preview.
+# Decorate: NVIDIA environment + bench (the rail's placement onto the bench is
+# baked into the URDF), plus glassware (test-tube rack, tubes, beakers).
 bench = lab_scene.add_lab_environment(stage)
-lab_scene.place_robot_on_bench(stage, bench)
 lab_scene.add_lab_glassware(stage, bench)
 
 print(f"[load_omx_f_dual_rail] USD saved: {USD_OUT}")
