@@ -61,7 +61,7 @@ stage = omni.usd.get_context().get_stage()
 # Decorate: NVIDIA environment + bench (the rail's placement onto the bench is
 # baked into the URDF), plus glassware (test-tube rack, tubes, beakers).
 bench = lab_scene.add_lab_environment(stage)
-lab_scene.add_lab_glassware(stage, bench)
+lab_scene.add_lab_props(stage, bench)
 
 print(f"[load_omx_f_dual_rail] USD saved: {USD_OUT}")
 print("[load_omx_f_dual_rail] WebRTC livestream running.")

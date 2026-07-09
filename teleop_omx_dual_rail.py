@@ -81,7 +81,7 @@ print(f"[teleop] Articulation root: {art_path}")
 
 # The rail's placement on the bench is baked into the URDF; just add the
 # glassware in reach — before world.reset() so colliders register.
-lab_scene.add_lab_glassware(stage, bench)
+lab_scene.add_lab_props(stage, bench)
 
 # ── Set up physics world ──────────────────────────────────────
 from isaacsim.core.api import World
